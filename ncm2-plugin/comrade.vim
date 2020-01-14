@@ -1,12 +1,13 @@
 " Integrate the Comrade IntelliJ plugin with the NCM2 completion plugin
 
-let s:comrade_source = {
+let s:source = {
 	\ 'name': 'Comrade IntelliJ',
 	\ 'mark': 'IDEA',
 	\ 'enable': v:true,
 	\ 'ready': v:true,
 	\ 'priority': 9,
 	\ 'scope': ['java', 'xml', 'asciidoc'],
+	\ 'complete_pattern': ['\w+'],
 	\ 'on_complete': {context -> s:on_complete(context)},
 	\ 'complete_length': 1,
 \ }
@@ -28,7 +29,7 @@ let s:comrade_source = {
 " The callback function, will be called when Comrade wants to display
 " completion
 function! s:on_complete(context)
-	let l:buf_id = context['bufnr']
+	let l:buf_id = a:context['bufnr']
 	let l:changedtick = nvim_buf_get_changedtick(l:buf_id)
 	let l:buf_name = nvim_buf_get_name(l:buf_id)
 	let l:win = nvim_get_current_win()
@@ -41,22 +42,31 @@ function! s:on_complete(context)
 	let l:ret = {
 		\ 'buf_id': l:buf_id,
 		\ 'buf_name': l:buf_name,
-		\ 'buf_changedtick': l:chnagedtick,
+		\ 'buf_changedtick': l:changedtick,
 		\ 'row': l:row,
 		\ 'col': l:col,
-		\ 'new_request': l:dated,  " CAUTION
+		\ 'new_request': v:true,
 	\ }
 
-	let l:results = comrade#RequestCompletion(l:buf_id, l:ret)
+	call s:send_request(a:context, l:buf_id, l:ret)
+endfunction
 
-	if empty(l:results)
-		let a:context['is_async'] = !l:results['is_finished']  " CAUTION
-		return l:results['candidates']  " CAUTION
-	endif
+" This function sends a blocking request to IntelliJ; IntelliJ returns almost
+" immediately, but the result is incomplete, it keeps building up further
+" results in the background.
+function! s:send_request(ctx, buf_id, ret)
+	" body
+	let l:results = comrade#RequestCompletion(a:buf_id, a:ret)
+	let a:ret['new_request'] = v:false
 
-	let a:context['is_async'] = v:false  " CAUTION
-	return []  " CAUTION
+	while !l:results['is_finished']
+		let l:results = comrade#RequestCompletion(a:buf_id, a:ret)
+		if !empty(l:results.candidates)
+			call ncm2#complete(a:ctx, a:ctx.startccol, l:results.candidates)
+		endif
+		call wait(10, { -> v:false })
+	endwhile
 endfunction
 
 " Not yet ready for use
-" call ncm2#register_source(s:source)
+call ncm2#register_source(s:source)

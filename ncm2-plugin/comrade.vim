@@ -48,25 +48,27 @@ function! s:on_complete(context)
 		\ 'new_request': v:true,
 	\ }
 
-	call s:send_request(a:context, l:buf_id, l:ret)
+	let l:Callback = {t -> s:send_request(t, a:context, l:buf_id, l:ret)}
+	call timer_start(100, l:Callback, {'repeat': -1})
 endfunction
 
 " This function sends a blocking request to IntelliJ; IntelliJ returns almost
 " immediately, but the result is incomplete, it keeps building up further
 " results in the background.
-function! s:send_request(ctx, buf_id, ret)
-	" body
+let s:ticks = {}
+function! s:send_request(timer, ctx, buf_id, ret)
+	let s:ticks['timer'] = get(s:ticks, 'timer', 0) + 1
 	let l:results = comrade#RequestCompletion(a:buf_id, a:ret)
 	let a:ret['new_request'] = v:false
 
-	while !l:results['is_finished']
-		let l:results = comrade#RequestCompletion(a:buf_id, a:ret)
-		if !empty(l:results.candidates)
-			call ncm2#complete(a:ctx, a:ctx.startccol, l:results.candidates)
-		endif
-		call wait(10, { -> v:false })
-	endwhile
+	echom string(s:ticks['timer'] .. ', new: ' .. a:ret['new_request'] .. ', results: ' .. string(l:results['candidates']))
+	if l:results['is_finished']
+		call timer_stop(a:timer)
+	endif
+	if !empty(l:results.candidates)
+		call ncm2#complete(a:ctx, a:ctx.startccol, l:results.candidates)
+	endif
 endfunction
 
 " Not yet ready for use
-call ncm2#register_source(s:source)
+" call ncm2#register_source(s:source)
